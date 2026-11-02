@@ -36,12 +36,15 @@ final readonly class RaHasher
      * @param  string  $raHasherPath  RAHasher executable
      * @param  string  $dolphinToolPath  DolphinTool executable
      * @param  string|null  $temporaryPath  folder for the converted ISO images and the temporary copies, the system one by default
+     * @param  string|null  $phpBinary  PHP command line binary to hash several files natively at the same time, each in its own
+     *                                  process (bin/ra-hasher); without it they are hashed one after another in this process
      */
     public function __construct(
         private string $raHasherPath,
         private string $dolphinToolPath,
         private CommandRunner $runner = new ProcessCommandRunner(),
         ?string $temporaryPath = null,
+        private ?string $phpBinary = null,
     ) {
         $this->temporaryPath = $temporaryPath ?? sys_get_temp_dir();
     }
@@ -59,8 +62,9 @@ final readonly class RaHasher
     }
 
     /**
-     * Hashes the files natively when possible, converts the ones DolphinTool
-     * has to convert one by one and runs RAHasher on the rest at the same time.
+     * Hashes the files natively when possible (at the same time when there
+     * is a PHP binary), converts the ones DolphinTool has to convert one by
+     * one and runs RAHasher on the rest at the same time.
      *
      * @param  list<SplFileInfo>  $files
      * @param  (Closure(SplFileInfo, string): void)|null  $onHashed  called as soon as the hash of each file is known
@@ -68,12 +72,12 @@ final readonly class RaHasher
      */
     public function hashMany(array $files, int $systemId, ?Closure $onHashed = null): array
     {
-        $hasher = GameHasherRegistry::for($systemId);
+        $nativeHashes = $this->nativeHashes($files, $systemId);
         $hashes = [];
         $leftToRaHasher = [];
 
         foreach ($files as $index => $file) {
-            $hash = $hasher?->hash($file);
+            $hash = $nativeHashes[$index];
 
             if ($hash === null && $this->convertsWithDolphinTool($file, $systemId)) {
                 $hash = $this->hashConvertedToIso($file, $systemId);
@@ -138,6 +142,34 @@ final readonly class RaHasher
         $hash = mb_strtolower(mb_trim((string) end($lines)));
 
         return preg_match('/^[a-f0-9]{32}$/', $hash) ? $hash : '';
+    }
+
+    /**
+     * @param  list<SplFileInfo>  $files
+     * @return list<string|null> null for the files that cannot be hashed natively
+     */
+    private function nativeHashes(array $files, int $systemId): array
+    {
+        $hasher = GameHasherRegistry::for($systemId);
+
+        if (! $hasher instanceof GameHasher) {
+            return array_fill(0, count($files), null);
+        }
+
+        if ($this->phpBinary === null || count($files) < 2) {
+            return array_map(static fn (SplFileInfo $file): ?string => $hasher->hash($file), $files);
+        }
+
+        $script = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'ra-hasher';
+        $commands = array_map(
+            fn (SplFileInfo $file): string => sprintf('"%s" "%s" %d --base64 %s', $this->phpBinary, $script, $systemId, base64_encode($file->getPathname())),
+            $files,
+        );
+
+        return array_map(
+            static fn (CommandResult $result): ?string => $result->exitCode === 0 && self::hashFrom($result) !== '' ? self::hashFrom($result) : null,
+            $this->runner->run($commands),
+        );
     }
 
     private function convertsWithDolphinTool(SplFileInfo $file, int $systemId): bool

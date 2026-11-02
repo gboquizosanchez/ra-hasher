@@ -82,6 +82,7 @@ $hash = $raHasher->hash(new SplFileInfo('Sonic CD.m3u'), 1); // '' when it canno
 - GameCube games and the Wii containers RAHasher cannot read (`.wbfs`, `.rvz`, `.wia`, `.gcz`, `.ciso`) are converted to ISO with DolphinTool first, in the temporary folder, with Dolphin's panic dialogs turned off.
 - Files whose path has non ASCII characters, which RAHasher cannot open, are hashed through a temporary copy.
 - `hashMany()` hashes several files and runs RAHasher on the ones left at the same time; `raHasher()` skips the native hashers, which is handy to compare both.
+- Pass `phpBinary` (for instance `PHP_BINARY`) and `hashMany()` hashes the files natively at the same time too, each in its own PHP process through `bin/ra-hasher`. A big compressed disc is several times faster this way.
 
 RAHasher and DolphinTool are not bundled: get [RAHasher](https://github.com/RetroAchievements/RALibretro/releases) and [DolphinTool](https://dolphin-emu.org/download/) from their projects.
 
