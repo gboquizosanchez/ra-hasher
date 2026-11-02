@@ -6,6 +6,7 @@ namespace Boquizo\RaHasher\Disc\Chd;
 
 use Boquizo\RaHasher\Compression\FlacDecoder;
 use Boquizo\RaHasher\Compression\LzmaDecoder;
+use Boquizo\RaHasher\Compression\ZstdDecoder;
 use RuntimeException;
 use SplFileInfo;
 use SplFileObject;
@@ -13,8 +14,8 @@ use SplFileObject;
 /**
  * A CHD v5 image, read from disk a hunk at a time like libchdr does. Only
  * images without a parent are supported, and only hunks compressed with
- * zlib, lzma or the CD codecs (cdzl, cdlz, cdfl) can be decoded: plain FLAC,
- * Zstandard and Huffman hunks throw when read.
+ * zlib, lzma, Zstandard or the CD codecs (cdzl, cdlz, cdzs, cdfl) can be
+ * decoded: plain FLAC and Huffman hunks throw when read.
  */
 final class ChdFile
 {
@@ -296,7 +297,8 @@ final class ChdFile
         return match ($codec) {
             'zlib' => self::inflate($compressed, $this->hunkBytes),
             'lzma' => LzmaDecoder::decode($compressed, $this->hunkBytes),
-            'cdzl', 'cdlz' => $this->decompressCd($compressed, $codec === 'cdlz'),
+            'zstd' => ZstdDecoder::decode($compressed, $this->hunkBytes),
+            'cdzl', 'cdlz', 'cdzs' => $this->decompressCd($compressed, $codec),
             'cdfl' => $this->decompressCdFlac($compressed),
             default => throw new RuntimeException('Hunk ' . $hunk . ' of the CHD image uses the unsupported codec "' . mb_rtrim($codec, "\0", '8bit') . '".'),
         };
@@ -305,10 +307,11 @@ final class ChdFile
     /**
      * A hunk of the CD codecs: a bitmap of the sectors whose sync and ECC
      * were dropped, the length of the compressed sectors (2 bytes, 3 for
-     * hunks of 64 KiB or more), the sectors compressed with lzma or zlib and
-     * then the subcode compressed with zlib. Frames interleave them again.
+     * hunks of 64 KiB or more), the sectors compressed with zlib, lzma or
+     * zstd and then the subcode, compressed with zstd in cdzs and with zlib
+     * otherwise. Frames interleave them again.
      */
-    private function decompressCd(string $compressed, bool $isLzma): string
+    private function decompressCd(string $compressed, string $codec): string
     {
         $frameCount = $this->cdFrameCount();
         $eccBytes = ($frameCount + 7) >> 3;
@@ -330,10 +333,15 @@ final class ChdFile
         }
 
         $compressedSectors = mb_substr($compressed, $headerBytes, $sectorsBytes, '8bit');
-        $sectors = $isLzma
-            ? LzmaDecoder::decode($compressedSectors, $frameCount * CdSectorEcc::SECTOR_BYTES)
-            : self::inflate($compressedSectors, $frameCount * CdSectorEcc::SECTOR_BYTES);
-        $subcode = self::inflate(mb_substr($compressed, $headerBytes + $sectorsBytes, null, '8bit'), $frameCount * self::CD_SUBCODE_BYTES);
+        $sectors = match ($codec) {
+            'cdlz' => LzmaDecoder::decode($compressedSectors, $frameCount * CdSectorEcc::SECTOR_BYTES),
+            'cdzs' => ZstdDecoder::decode($compressedSectors, $frameCount * CdSectorEcc::SECTOR_BYTES),
+            default => self::inflate($compressedSectors, $frameCount * CdSectorEcc::SECTOR_BYTES),
+        };
+        $compressedSubcode = mb_substr($compressed, $headerBytes + $sectorsBytes, null, '8bit');
+        $subcode = $codec === 'cdzs'
+            ? ZstdDecoder::decode($compressedSubcode, $frameCount * self::CD_SUBCODE_BYTES)
+            : self::inflate($compressedSubcode, $frameCount * self::CD_SUBCODE_BYTES);
         $hunk = '';
 
         for ($frame = 0; $frame < $frameCount; $frame++) {
