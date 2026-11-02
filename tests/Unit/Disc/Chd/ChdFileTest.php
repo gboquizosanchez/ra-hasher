@@ -22,6 +22,12 @@ function lzmaHunk(): string
     return (string) file_get_contents(dirname(__DIR__, 3) . '/Fixtures/Lzma/literals.lzma');
 }
 
+/** A zstd frame with a 64 KiB window that stores the data in a raw block. */
+function storedZstdFrame(string $data): string
+{
+    return "\x28\xB5\x2F\xFD\x00\x30" . mb_substr(pack('V', 1 | (mb_strlen($data, '8bit') << 3)), 0, 3, '8bit') . $data;
+}
+
 it('reads the geometry of the image', function (string $name, int $hunkBytes, int $unitBytes, int $hunkCount, int $unitCount): void {
     $chd = ChdFile::open(new SplFileInfo(chdFixturePath($name)));
 
@@ -71,6 +77,18 @@ it('decodes zlib, lzma, uncompressed and copied hunks', function (): void {
 
     expect(array_map($chd->readHunk(...), [0, 1, 2, 3]))->toBe([$zlibHunk, $lzmaHunk, $uncompressedHunk, $zlibHunk])
         ->and(md5($lzmaHunk))->toBe('693cc569baa071a8adbdd268a9c078b4');
+});
+
+it('decodes zstd hunks and cd hunks whose sectors and subcode are compressed with zstd', function (): void {
+    $sector = str_repeat('sector ', 336);
+    $subcode = str_repeat('subcode ', 12);
+    $cdHunk = "\x00" . pack('n', mb_strlen(storedZstdFrame($sector), '8bit')) . storedZstdFrame($sector) . storedZstdFrame($subcode);
+    $chd = ChdFile::open(chdOnDisk($this->directory, syntheticChd([
+        [0, storedZstdFrame(str_repeat('z', 2448)), Crc16::compute(str_repeat('z', 2448))],
+        [1, $cdHunk, Crc16::compute($sector . $subcode)],
+    ], ['zstd', 'cdzs'], hunkBytes: 2448)));
+
+    expect([$chd->readHunk(0), $chd->readHunk(1)])->toBe([str_repeat('z', 2448), $sector . $subcode]);
 });
 
 it('keeps the last hunk it read', function (): void {
@@ -204,7 +222,7 @@ it('rejects the codecs it does not support', function (string $codec): void {
     $chd = ChdFile::open(chdOnDisk($this->directory, syntheticChd([[0, 'compressed data', 0]], [$codec])));
 
     expect(fn (): string => $chd->readHunk(0))->toThrow(RuntimeException::class, 'Hunk 0 of the CHD image uses the unsupported codec "' . $codec . '"');
-})->with(['flac', 'zstd', 'cdzs', 'huff']);
+})->with(['flac', 'huff']);
 
 it('rejects the codecs of hunk types without one', function (): void {
     $chd = ChdFile::open(chdOnDisk($this->directory, syntheticChd([[1, 'lzma data', 0]], ['zlib'])));

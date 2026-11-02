@@ -26,7 +26,7 @@ RetroAchievements identifies a game by a hash of its file, calculated differentl
 
 This package reimplements those rules in PHP, including readers for the compressed formats a collection usually has:
 
-- **CHD** (v5, zlib, LZMA and FLAC hunks) for CD based systems.
+- **CHD** (v5, zlib, LZMA, zstd and FLAC hunks) for CD based systems.
 - **RVZ** (zstd or uncompressed) for GameCube.
 - **WBFS**, split `.wbf1`…`.wbf9` parts included, for Wii.
 
@@ -120,7 +120,7 @@ $raHasher = new RaHasher($raHasherPath, $dolphinToolPath, new MyCommandRunner())
 | Disc (ISO, BIN/CUE, CHD) | PlayStation, PlayStation 2, PSP, Sega CD, Sega Saturn, Dreamcast, Neo Geo CD, 3DO, PC Engine CD, PC-FX |
 | Nintendo disc | GameCube (ISO, RVZ), Wii (ISO, WBFS, WAD) |
 
-Every other system, and the cases above the native hashers leave aside (zstd compressed CHDs, `.m3u` playlists…), goes to RAHasher when you use `RaHasher`.
+Every other system, and the cases above the native hashers leave aside (`.m3u` playlists, CHDs with Huffman hunks…), goes to RAHasher when you use `RaHasher`.
 
 ---
 
