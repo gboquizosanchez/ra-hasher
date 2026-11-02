@@ -41,6 +41,18 @@ it('swaps big dumps across read chunks', function (): void {
     expect(new Nintendo64Hasher()->hash($file))->toBe(md5($bigEndian));
 });
 
+it('swaps words that are not valid characters', function (string $name, string $header, string $words, string $from, string $to): void {
+    $file = n64Rom($this->directory, $name, $header . $words);
+
+    $bigEndian = "\x80\x37\x12\x40" . pack($to, ...array_values((array) unpack($from, $words)));
+
+    expect(new Nintendo64Hasher()->hash($file))->toBe(md5($bigEndian));
+})->with([
+    'v64' => ['Mario.v64', "\x37\x80\x40\x12", "\xD8\x00\xDF\xFF\xFF\xFF\xFF\xFE\xFF\xFF\xFF\xFF", 'n*', 'v*'],
+    'n64' => ['Mario.n64', "\x40\x12\x37\x80", "\xD8\x00\xDF\xFF\xFF\xFF\xFF\xFE\x00\x00\x11\x00\x80\x00\x00\x00", 'N*', 'V*'],
+    'n64 with the mbstring error marker' => ['Mario.n64', "\x40\x12\x37\x80", "\xD8\x00\xDF\xFF\xFF\xFF\xFF\xFF\x00\x00\x11\x00", 'N*', 'V*'],
+]);
+
 it('swaps the last complete 16-bit word of a byteswapped dump like rcheevos', function (): void {
     $file = n64Rom($this->directory, 'Mario.v64', "\x37\x80\x40\x12" . 'ZY');
 
