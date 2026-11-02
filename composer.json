@@ -1,0 +1,48 @@
+{
+  "name": "gboquizosanchez/ra-hasher",
+  "description": "RetroAchievements game hashes in pure PHP",
+  "license": "MIT",
+  "type": "library",
+  "keywords": [
+    "retroachievements",
+    "rahasher",
+    "rcheevos",
+    "hash"
+  ],
+  "homepage": "https://github.com/gboquizosanchez/ra-hasher",
+  "authors": [
+    {
+      "name": "Germán Boquizo Sánchez",
+      "email": "germanboquizosanchez@gmail.com",
+      "role": "Developer"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Boquizo\\RaHasher\\": "src/"
+    }
+  },
+  "require": {
+    "php": "^8.4",
+    "ext-hash": "*",
+    "ext-mbstring": "*",
+    "ext-zlib": "*"
+  },
+  "require-dev": {
+    "laravel/pint": "^1.29",
+    "pestphp/pest": "^5.0"
+  },
+  "scripts": {
+    "fix": "pint",
+    "test": "pest",
+    "test:coverage": "pest --coverage --min=100"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  }
+}
