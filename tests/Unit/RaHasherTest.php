@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Boquizo\RaHasher\RaHasher;
 use Boquizo\RaHasher\Runner\CommandResult;
+use Boquizo\RaHasher\Runner\ProcessCommandRunner;
 
 const RA_HASHER_HASH = '1bc674be034e43c96b86487ac69d9293';
 
@@ -223,3 +224,63 @@ it('tells the second and later parts of a split wbfs image', function (string $n
     ['Game.wbf0', false],
     ['Game.iso', false],
 ]);
+
+it('hashes the files natively at the same time, one process each, when it has the php binary', function (): void {
+    $runner = new FakeCommandRunner(static fn (string $command): CommandResult => new CommandResult(md5($command) . "\n"));
+    $first = gameFile($this->games, 'Sonic.md');
+    $second = gameFile($this->games, 'Sonic 2.md');
+
+    $hashes = new RaHasher('RAHasher.exe', 'DolphinTool.exe', $runner, $this->temporary, 'php.exe')->hashMany([$first, $second], 1);
+
+    $script = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'ra-hasher';
+    $commands = [
+        sprintf('"php.exe" "%s" 1 --base64 %s', $script, base64_encode($first->getPathname())),
+        sprintf('"php.exe" "%s" 1 --base64 %s', $script, base64_encode($second->getPathname())),
+    ];
+    expect($runner->runs)->toBe([$commands])
+        ->and($hashes)->toBe([md5($commands[0]), md5($commands[1])]);
+});
+
+it('falls back to rahasher for the files the native processes cannot hash', function (CommandResult $native): void {
+    $runner = new FakeCommandRunner(static fn (string $command): CommandResult => str_starts_with($command, '"php.exe"') ? $native : new CommandResult(RA_HASHER_HASH));
+    $files = [gameFile($this->games, 'Sonic CD.m3u'), gameFile($this->games, 'Knuckles CD.m3u')];
+
+    $hashes = new RaHasher('RAHasher.exe', 'DolphinTool.exe', $runner, $this->temporary, 'php.exe')->hashMany($files, 1);
+
+    expect($hashes)->toBe([RA_HASHER_HASH, RA_HASHER_HASH])
+        ->and($runner->runs)->toHaveCount(2);
+})->with([
+    'not hashable' => [new CommandResult('', '', 1)],
+    'crashed after printing' => [new CommandResult(md5('rom'), 'Fatal error', 255)],
+    'no hash printed' => [new CommandResult('Warning: something')],
+]);
+
+it('hashes a single file in this process even with the php binary', function (): void {
+    $runner = FakeCommandRunner::printing(RA_HASHER_HASH);
+
+    $hash = new RaHasher('RAHasher.exe', 'DolphinTool.exe', $runner, $this->temporary, 'php.exe')->hash(gameFile($this->games, 'Sonic.md'), 1);
+
+    expect($hash)->toBe(md5('rom'))
+        ->and($runner->runs)->toBe([]);
+});
+
+it('hashes natively in real processes, including paths with non ascii characters', function (): void {
+    $files = [gameFile($this->games, 'Sonic.md', 'sonic'), gameFile($this->games, 'Ёжик.md', 'hedgehog')];
+
+    $hashes = new RaHasher('RAHasher.exe', 'DolphinTool.exe', new ProcessCommandRunner(), $this->temporary, PHP_BINARY)->hashMany($files, 1);
+
+    expect($hashes)->toBe([md5('sonic'), md5('hedgehog')]);
+});
+
+it('prints the native hash of the file given as it is, or exits with 1 when it cannot hash it natively', function (): void {
+    $script = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'ra-hasher';
+    $command = static fn (string $file): string => sprintf('"%s" "%s" 1 "%s"', PHP_BINARY, $script, $file);
+
+    [$rom, $playlist] = new ProcessCommandRunner()->run([
+        $command(gameFile($this->games, 'Sonic.md')->getPathname()),
+        $command(gameFile($this->games, 'Sonic CD.m3u')->getPathname()),
+    ]);
+
+    expect($rom)->toEqual(new CommandResult(md5('rom') . PHP_EOL))
+        ->and($playlist)->toEqual(new CommandResult('', '', 1));
+});

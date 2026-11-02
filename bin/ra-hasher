@@ -1,0 +1,35 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Prints the native hash of a file, or exits with 1 when it cannot be hashed
+ * natively. RaHasher runs one of these per file to hash several files at the
+ * same time.
+ *
+ * Usage: ra-hasher <system id> <file>
+ *        ra-hasher <system id> --base64 <base64 encoded file path>
+ *
+ * The base64 form keeps paths with non ASCII characters intact on Windows,
+ * where the command line arguments go through the ANSI code page.
+ */
+
+use Boquizo\RaHasher\GameHasherRegistry;
+
+foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
+    if (is_file($autoload)) {
+        require $autoload;
+
+        break;
+    }
+}
+
+$path = ($argv[2] ?? '') === '--base64' ? base64_decode($argv[3] ?? '', strict: true) : ($argv[2] ?? '');
+$hash = is_string($path) && $path !== '' ? GameHasherRegistry::for((int) ($argv[1] ?? 0))?->hash(new SplFileInfo($path)) : null;
+
+if ($hash === null) {
+    exit(1);
+}
+
+echo $hash, PHP_EOL;

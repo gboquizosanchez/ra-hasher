@@ -17,6 +17,9 @@
       "role": "Developer"
     }
   ],
+  "bin": [
+    "bin/ra-hasher"
+  ],
   "autoload": {
     "psr-4": {
       "Boquizo\\RaHasher\\": "src/"
